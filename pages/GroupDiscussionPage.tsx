@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { User } from '../types';
 
@@ -9,12 +8,17 @@ interface Participant {
     name: string;
 }
 
-const Video: React.FC<{ stream: MediaStream }> = ({ stream }) => {
+const Video: React.FC<{ stream: MediaStream, name: string, isMuted: boolean }> = ({ stream, name, isMuted }) => {
     const ref = useRef<HTMLVideoElement>(null);
     useEffect(() => {
         if (ref.current) ref.current.srcObject = stream;
     }, [stream]);
-    return <video ref={ref} autoPlay muted className="h-full w-full object-cover" />;
+    return (
+        <div className="bg-black rounded-lg overflow-hidden relative aspect-video w-full h-full">
+            <video ref={ref} autoPlay playsInline muted={isMuted} className="h-full w-full object-cover" />
+            <div className="absolute bottom-2 left-2 bg-black/50 text-white px-2 py-1 text-sm rounded">{name}</div>
+        </div>
+    );
 };
 
 
@@ -45,18 +49,22 @@ const GroupDiscussionPage: React.FC<{user: User}> = ({ user }) => {
     }, []);
 
     useEffect(() => {
-        getMedia();
-        const newSocket = io('https://googleauth-bu6c.onrender.com');
+        const newSocket = io('https://googleauth-bu6c.onrender.com', { transports: ['websocket'] });
         setSocket(newSocket);
+        getMedia();
 
         return () => {
             stopTracks(localStream);
             newSocket.disconnect();
             Object.values(peerConnections.current).forEach(pc => pc.close());
         };
-    }, [getMedia]);
+    }, [getMedia, localStream]);
 
     const createPeerConnection = useCallback((peerSocketId: string, isInitiator: boolean) => {
+        if (peerConnections.current[peerSocketId]) {
+            return peerConnections.current[peerSocketId];
+        }
+
         const pc = new RTCPeerConnection({
             iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
         });
@@ -64,7 +72,7 @@ const GroupDiscussionPage: React.FC<{user: User}> = ({ user }) => {
         peerConnections.current[peerSocketId] = pc;
 
         pc.onicecandidate = (event) => {
-            if (event.candidate) {
+            if (event.candidate && socket) {
                 socket.emit('webrtc-signal', { to: peerSocketId, signal: { type: 'candidate', candidate: event.candidate } });
             }
         };
@@ -77,7 +85,7 @@ const GroupDiscussionPage: React.FC<{user: User}> = ({ user }) => {
             pc.addTrack(track, localStream);
         });
 
-        if (isInitiator) {
+        if (isInitiator && socket) {
              pc.createOffer()
                 .then(offer => pc.setLocalDescription(offer))
                 .then(() => {
@@ -90,36 +98,27 @@ const GroupDiscussionPage: React.FC<{user: User}> = ({ user }) => {
 
 
     useEffect(() => {
-        if (!socket || !localStream) return;
+        if (!socket) return;
 
-        socket.on('connect_error', () => setError("Failed to connect to server. Please ensure the server is running and try again."));
-        socket.on('error', (errorMessage: string) => setError(errorMessage));
-
-        socket.on('gd-room-created', (newRoomCode: string) => {
+        const handleConnectError = () => setError("Failed to connect to server. Please ensure the server is running and try again.");
+        const handleError = (errorMessage: string) => setError(errorMessage);
+        const handleGdRoomCreated = (newRoomCode: string) => {
             setRoomCode(newRoomCode);
             setInRoom(true);
             setParticipants([{ id: socket.id, name: user.name }]);
-        });
-
-        // I'm the new user, get list of existing users and create connections
-        socket.on('joined-gd-room', (data: { roomCode: string; participants: Participant[] }) => {
+        };
+        const handleJoinedGdRoom = (data: { roomCode: string; participants: Participant[] }) => {
             setRoomCode(data.roomCode);
-            setParticipants([...data.participants, { id: socket.id, name: user.name }]);
             setInRoom(true);
             setError(null);
-            
-            data.participants.forEach(p => {
-                createPeerConnection(p.id, true);
-            });
-        });
-
-        // An existing user, a new person joined, create a connection for them
-        socket.on('user-joining-gd', (data: { newParticipant: Participant }) => {
+            setParticipants([...data.participants, { id: socket.id, name: user.name }]);
+            data.participants.forEach(p => createPeerConnection(p.id, true));
+        };
+        const handleUserJoiningGd = (data: { newParticipant: Participant }) => {
             setParticipants(prev => [...prev, data.newParticipant]);
             createPeerConnection(data.newParticipant.id, false);
-        });
-        
-        socket.on('webrtc-signal', async (data: { from: string; signal: any }) => {
+        };
+        const handleWebrtcSignal = async (data: { from: string; signal: any }) => {
             const pc = peerConnections.current[data.from] || createPeerConnection(data.from, false);
             if (data.signal.type === 'offer') {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.signal.sdp));
@@ -129,29 +128,52 @@ const GroupDiscussionPage: React.FC<{user: User}> = ({ user }) => {
             } else if (data.signal.type === 'answer') {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.signal.sdp));
             } else if (data.signal.type === 'candidate') {
-                await pc.addIceCandidate(new RTCIceCandidate(data.signal.candidate));
+                try {
+                    await pc.addIceCandidate(new RTCIceCandidate(data.signal.candidate));
+                } catch (e) {
+                    console.error('Error adding received ice candidate', e);
+                }
             }
-        });
-
-        socket.on('user-left-gd', (data: { socketId: string }) => {
-            setParticipants(prev => prev.filter(p => p.id !== data.socketId));
+        };
+        const handleUserLeftGd = (data: { socketId: string }) => {
             peerConnections.current[data.socketId]?.close();
             delete peerConnections.current[data.socketId];
+            setParticipants(prev => prev.filter(p => p.id !== data.socketId));
             setRemoteStreams(prev => {
                 const newStreams = { ...prev };
                 delete newStreams[data.socketId];
                 return newStreams;
             });
-        });
+        };
 
-    }, [socket, user.name, localStream, createPeerConnection]);
+        socket.on('connect_error', handleConnectError);
+        socket.on('error', handleError);
+        socket.on('gd-room-created', handleGdRoomCreated);
+        socket.on('joined-gd-room', handleJoinedGdRoom);
+        socket.on('user-joining-gd', handleUserJoiningGd);
+        socket.on('webrtc-signal', handleWebrtcSignal);
+        socket.on('user-left-gd', handleUserLeftGd);
+
+        return () => {
+            socket.off('connect_error', handleConnectError);
+            socket.off('error', handleError);
+            socket.off('gd-room-created', handleGdRoomCreated);
+            socket.off('joined-gd-room', handleJoinedGdRoom);
+            socket.off('user-joining-gd', handleUserJoiningGd);
+            socket.off('webrtc-signal', handleWebrtcSignal);
+            socket.off('user-left-gd', handleUserLeftGd);
+        };
+
+    }, [socket, user.name, createPeerConnection]);
 
 
     const handleCreateRoom = () => socket?.emit('create-gd-room', { userName: user.name });
 
     const handleJoinRoom = (e: React.FormEvent) => {
         e.preventDefault();
-        socket?.emit('join-gd-room', { roomCode: joinRoomCode, userName: user.name });
+        if(joinRoomCode.trim()) {
+            socket?.emit('join-gd-room', { roomCode: joinRoomCode, userName: user.name });
+        }
     };
 
     const handleLeaveRoom = () => {
@@ -165,7 +187,7 @@ const GroupDiscussionPage: React.FC<{user: User}> = ({ user }) => {
     }
 
     const Lobby = () => (
-        <div className="w-full max-w-md mx-auto">
+        <div className="w-full max-w-md mx-auto animate-fade-in-up">
              <div className="bg-gray-800 p-6 md:p-8 rounded-lg shadow-xl mb-6">
                  <h2 className="text-xl md:text-2xl font-bold text-white text-center">Create Discussion Room</h2>
                  <p className="text-gray-400 text-center mt-2 text-sm md:text-base">Start a new GD room and invite others with a code.</p>
@@ -187,7 +209,7 @@ const GroupDiscussionPage: React.FC<{user: User}> = ({ user }) => {
     );
     
     const Room = () => (
-        <div className="h-full w-full flex flex-col">
+        <div className="h-full w-full flex flex-col animate-fade-in">
             <div className="mb-4 flex flex-col sm:flex-row justify-between items-center gap-2">
                 <div>
                     <h2 className="text-xl md:text-2xl font-bold text-white">Room Code: <span className="text-blue-400 font-mono">{roomCode}</span></h2>
@@ -197,20 +219,14 @@ const GroupDiscussionPage: React.FC<{user: User}> = ({ user }) => {
                     Leave Room
                 </button>
             </div>
-            <div className="flex-grow grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            <div className="flex-grow grid grid-cols-1 md:grid-cols-2 gap-4 auto-rows-min">
                 {localStream && (
-                    <div className="bg-black rounded-lg overflow-hidden relative aspect-video">
-                         <Video stream={localStream} />
-                         <div className="absolute bottom-2 left-2 bg-black/50 text-white px-2 py-1 text-sm rounded">{user.name} (You)</div>
-                    </div>
+                     <Video stream={localStream} name={`${user.name} (You)`} isMuted={true} />
                 )}
                 {Object.entries(remoteStreams).map(([socketId, stream]) => {
                     const participant = participants.find(p => p.id === socketId);
                     return (
-                        <div key={socketId} className="bg-black rounded-lg overflow-hidden relative aspect-video">
-                            <Video stream={stream} />
-                            <div className="absolute bottom-2 left-2 bg-black/50 text-white px-2 py-1 text-sm rounded">{participant?.name}</div>
-                        </div>
+                        <Video key={socketId} stream={stream} name={participant?.name ?? 'Guest'} isMuted={false} />
                     );
                 })}
             </div>
@@ -218,12 +234,12 @@ const GroupDiscussionPage: React.FC<{user: User}> = ({ user }) => {
     );
 
     return (
-        <div className="h-full flex flex-col bg-gray-800/50 rounded-lg p-4 md:p-6 animate-fade-in">
+        <div className="h-full flex flex-col bg-gray-800/50 rounded-lg p-4 md:p-6">
              <div className="mb-4">
                 <h1 className="text-2xl md:text-3xl font-bold text-white">Group Discussion</h1>
                 <p className="mt-1 text-gray-400 text-sm md:text-base">Join or create a room to practice group discussions with others in real-time.</p>
              </div>
-             {error && <p className="mb-4 text-center text-red-400 bg-red-900/50 p-3 rounded-lg">{error}</p>}
+             {error && <p className="mb-4 text-center text-red-400 bg-red-900/50 p-3 rounded-lg animate-fade-in">{error}</p>}
              <div className="flex-grow flex items-center justify-center">
                 {inRoom ? <Room /> : <Lobby />}
              </div>

@@ -1,4 +1,3 @@
-
 // A simple backend server to manage real-time rooms for the interview prep app.
 // To run this server:
 // 1. Make sure you have Node.js installed.
@@ -44,9 +43,7 @@ io.on('connection', (socket) => {
     const room = gdRooms[roomCode];
     if (room) {
       // Notify existing participants that a new user is joining
-      room.participants.forEach(p => {
-        io.to(p.id).emit('user-joining-gd', { newParticipant: { id: socket.id, name: userName } });
-      });
+      socket.to(roomCode).emit('user-joining-gd', { newParticipant: { id: socket.id, name: userName } });
       
       socket.join(roomCode);
       // Send the list of existing participants to the new user
@@ -112,31 +109,25 @@ sayHello('World');
   });
   
   socket.on('code-change', ({ roomCode, newCode }) => {
-      const room = Object.values(interviewRooms).find(r => r.interviewer.id === socket.id || r.student?.id === socket.id);
-      if(room) {
-          room.code = newCode;
-          // broadcast to the other person in the room
-          const targetSocketId = room.interviewer.id === socket.id ? room.student.id : room.interviewer.id;
-          if (targetSocketId) {
+      if (interviewRooms[roomCode]) {
+          interviewRooms[roomCode].code = newCode;
+          // broadcast to the other person in the room (the interviewer)
+          const targetSocketId = interviewRooms[roomCode].interviewer.id;
+          if (targetSocketId && targetSocketId !== socket.id) {
             io.to(targetSocketId).emit('code-updated', newCode);
           }
       }
   });
   
   socket.on('code-run', ({ roomCode, output }) => {
-      const room = Object.values(interviewRooms).find(r => r.interviewer.id === socket.id || r.student?.id === socket.id);
-      if(room) {
-          // broadcast to the other person in the room
-          const targetSocketId = room.interviewer.id === socket.id ? room.student.id : room.interviewer.id;
-          if(targetSocketId) {
-            io.to(targetSocketId).emit('output-updated', output);
-          }
+      if (interviewRooms[roomCode]) {
+           // broadcast to everyone in the room (both student and interviewer)
+          io.to(roomCode).emit('output-updated', output);
       }
   });
 
   // --- WebRTC Signaling Passthrough ---
   socket.on('webrtc-signal', (payload) => {
-    //   console.log(`Signaling message from ${socket.id} to ${payload.to}: ${payload.signal.type}`);
       io.to(payload.to).emit('webrtc-signal', {
           from: socket.id,
           signal: payload.signal,

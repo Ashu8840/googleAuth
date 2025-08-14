@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { subjects } from '../data/subjects';
 import AIGeneratedContent from '../components/AIGeneratedContent';
@@ -7,14 +6,14 @@ const CoreSubjectsPage: React.FC = () => {
   const [selectedTopic, setSelectedTopic] = useState<string>('');
 
   return (
-    <div className="flex flex-col lg:flex-row h-full bg-gray-800 rounded-lg overflow-hidden">
+    <div className="flex flex-col md:flex-row h-full bg-gray-800 rounded-lg overflow-hidden">
       {/* Topics Column */}
-      <div className="w-full lg:w-1/3 border-b lg:border-b-0 lg:border-r border-gray-700 flex flex-col">
+      <div className="w-full md:w-1/3 lg:w-1/4 border-b md:border-b-0 md:border-r border-gray-700 flex flex-col">
           <div className="p-4 border-b border-gray-700">
              <h2 className="text-xl font-bold text-white">Core Topics</h2>
              <p className="text-sm text-gray-400">Select a topic to begin</p>
           </div>
-          <div className="flex-grow overflow-y-auto max-h-60 lg:max-h-full">
+          <div className="flex-grow overflow-y-auto max-h-60 md:max-h-full">
             {subjects.map((subject) => (
                 <div key={subject.name} className="p-4">
                     <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">{subject.name}</h3>
@@ -43,8 +42,8 @@ const CoreSubjectsPage: React.FC = () => {
       </div>
 
       {/* AI Content Column */}
-      <main className="w-full lg:w-2/3 flex flex-col">
-         <div className="flex-grow overflow-y-auto p-6 md:p-8">
+      <main className="w-full md:w-2/3 lg:w-3/4 flex flex-col">
+         <div className="flex-grow overflow-y-auto p-4 sm:p-6 md:p-8">
             <div className="prose prose-invert max-w-none">
                  <style>{`
                     .prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6 { color: white; }
