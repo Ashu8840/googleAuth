@@ -26,7 +26,7 @@ const InterviewRoomPage: React.FC<{ user: User }> = ({ user }) => {
     const studentCode = roomState?.code ?? '';
 
     useEffect(() => {
-        const newSocket = io('http://localhost:3001');
+        const newSocket = io('https://googleauth-bu6c.onrender.com');
         setSocket(newSocket);
 
         newSocket.on('connect_error', () => {
