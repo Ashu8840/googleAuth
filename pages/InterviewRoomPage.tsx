@@ -125,6 +125,11 @@ const InterviewRoomPage: React.FC<{ user: User }> = ({ user }) => {
         const handleInterviewRoomCreated = (newRoomCode: string) => { setRoomCode(newRoomCode); setPageState('waiting'); };
         
         const handleInterviewRoomReady = (data: { roomData: RoomState, roomCode: string }) => {
+            if (!data || !data.roomData) {
+                setError("Received invalid room data from server.");
+                setPageState('error');
+                return;
+            }
             setRoomCode(data.roomCode);
             setRoomState(data.roomData);
             setEditorCode(data.roomData.code);
@@ -149,7 +154,7 @@ const InterviewRoomPage: React.FC<{ user: User }> = ({ user }) => {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.signal.sdp));
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
-                socket.emit('webrtc-signal', { to: data.from, signal: { type: 'answer', sdp: pc.localDescription } });
+                socketRef.current.emit('webrtc-signal', { to: data.from, signal: { type: 'answer', sdp: pc.localDescription } });
             } else if (data.signal.type === 'answer') {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.signal.sdp));
             } else if (data.signal.type === 'candidate') {
@@ -176,8 +181,7 @@ const InterviewRoomPage: React.FC<{ user: User }> = ({ user }) => {
             cleanup();
             socket.disconnect();
         };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [getMedia, createPeerConnection, role, localStream]);
 
     const handleCreateRoom = () => { setRole('interviewer'); socketRef.current.emit('create-interview-room', { userName: user.name }); };
     const handleJoinRoom = (e: React.FormEvent) => { e.preventDefault(); if (inputRoomCode.trim()) { setRole('student'); socketRef.current.emit('join-interview-room', { roomCode: inputRoomCode.trim().toUpperCase(), userName: user.name }); }};

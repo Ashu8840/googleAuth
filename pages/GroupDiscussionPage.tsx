@@ -126,7 +126,7 @@ const GroupDiscussionPage: React.FC<{user: User}> = ({ user }) => {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.signal.sdp));
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
-                socket.emit('webrtc-signal', { to: data.from, signal: { type: 'answer', sdp: pc.localDescription } });
+                socketRef.current.emit('webrtc-signal', { to: data.from, signal: { type: 'answer', sdp: pc.localDescription } });
             } else if (data.signal.type === 'answer') {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.signal.sdp));
             } else if (data.signal.type === 'candidate') {
@@ -158,8 +158,7 @@ const GroupDiscussionPage: React.FC<{user: User}> = ({ user }) => {
             socket.disconnect();
             Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
         };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [getMedia, createPeerConnection, user.name]);
+    }, [getMedia, createPeerConnection, user.name, localStream]);
 
 
     const handleCreateRoom = () => {
