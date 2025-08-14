@@ -6,6 +6,8 @@ interface AIGeneratedContentProps {
   topic: string;
 }
 
+const API_KEY = 'AIzaSyDuN41Uv5lhBALlQHo6pg2GZpbpE-ardck';
+
 const AIGeneratedContent: React.FC<AIGeneratedContentProps> = ({ topic }) => {
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(false);
@@ -19,14 +21,14 @@ const AIGeneratedContent: React.FC<AIGeneratedContentProps> = ({ topic }) => {
       setError(null);
       setContent('');
 
-      if (!process.env.API_KEY) {
-        setError("API key is not configured. Please set the API_KEY environment variable.");
+      if (!API_KEY) {
+        setError("Gemini API key is not configured.");
         setLoading(false);
         return;
       }
 
       try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const ai = new GoogleGenAI({ apiKey: API_KEY });
         const prompt = `
           Explain the topic "${topic}" for a computer science job interview.
           Your audience is a CS student preparing for a technical role.
