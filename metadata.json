@@ -1,5 +1,8 @@
 {
   "name": "CS Interview Prep",
   "description": "An AI-powered platform for computer science students to prepare for technical interviews, featuring core subject explanations, mock tests, and collaborative tools.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
 }
