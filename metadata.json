@@ -1,0 +1,5 @@
+{
+  "name": "Google Auth Profile Viewer",
+  "description": "A web application that allows users to sign in using their Google account to view their profile information.",
+  "requestFramePermissions": []
+}
