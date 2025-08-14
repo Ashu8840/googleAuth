@@ -58,30 +58,10 @@ const InterviewRoomPage: React.FC<{ user: User }> = ({ user }) => {
     const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
     const [roomState, setRoomState] = useState<RoomState | null>(null);
 
-    const handleLeaveRoom = useCallback(() => {
-        socketRef.current?.emit('leave-interview-room');
-        
-        localStreamRef.current?.getTracks().forEach(track => track.stop());
-        localStreamRef.current = null;
-        setLocalStream(null);
-        
-        peerConnectionRef.current?.close();
-        peerConnectionRef.current = null;
-        setRemoteStream(null);
-        
-        setPageState('lobby');
-        setRole(null);
-        setRoomCode('');
-        setRoomState(null);
-        setError(null);
-        setInputRoomCode('');
-    }, []);
-
     const setupPeerConnection = useCallback((peerId: string, isInitiator: boolean) => {
-        if (!localStreamRef.current || !socketRef.current) return;
+        if (!localStreamRef.current || !socketRef.current) return null;
         
         const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-        peerConnectionRef.current = pc;
         
         localStreamRef.current.getTracks().forEach(track => pc.addTrack(track, localStreamRef.current!));
 
@@ -102,6 +82,26 @@ const InterviewRoomPage: React.FC<{ user: User }> = ({ user }) => {
                     }
                 });
         }
+        return pc;
+    }, []);
+
+    const handleLeaveRoom = useCallback(() => {
+        socketRef.current?.emit('leave-interview-room');
+        
+        localStreamRef.current?.getTracks().forEach(track => track.stop());
+        localStreamRef.current = null;
+        setLocalStream(null);
+        
+        peerConnectionRef.current?.close();
+        peerConnectionRef.current = null;
+        setRemoteStream(null);
+        
+        setPageState('lobby');
+        setRole(null);
+        setRoomCode('');
+        setRoomState(null);
+        setError(null);
+        setInputRoomCode('');
     }, []);
 
     // Effect for initializing and cleaning up the socket connection
@@ -143,17 +143,19 @@ const InterviewRoomPage: React.FC<{ user: User }> = ({ user }) => {
             const partner = currentRole === 'interviewer' ? data.roomData.student : data.roomData.interviewer;
             if (partner) {
                 const isInitiator = currentRole === 'interviewer';
-                setupPeerConnection(partner.id, isInitiator);
+                const pc = setupPeerConnection(partner.id, isInitiator);
+                peerConnectionRef.current = pc;
             }
         };
 
         const handleWebrtcSignal = async (data: { from: string; signal: any }) => {
             let pc = peerConnectionRef.current;
             if (!pc) {
-                setupPeerConnection(data.from, false);
-                pc = peerConnectionRef.current;
+                const newPc = setupPeerConnection(data.from, false);
+                if (!newPc) return;
+                peerConnectionRef.current = newPc;
+                pc = newPc;
             }
-            if (!pc) return;
 
             if (data.signal.sdp) {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.signal.sdp));
@@ -176,8 +178,18 @@ const InterviewRoomPage: React.FC<{ user: User }> = ({ user }) => {
         };
     }, [handleLeaveRoom, setupPeerConnection]);
 
-    const handleCreateRoom = () => { setRole('interviewer'); socketRef.current.emit('create-interview-room', { userName: user.name }); };
-    const handleJoinRoom = (e: React.FormEvent) => { e.preventDefault(); if (inputRoomCode.trim()) { setRole('student'); socketRef.current.emit('join-interview-room', { roomCode: inputRoomCode.trim().toUpperCase(), userName: user.name }); }};
+    const handleCreateRoom = useCallback(() => { 
+        setRole('interviewer'); 
+        socketRef.current.emit('create-interview-room', { userName: user.name }); 
+    }, [user.name]);
+
+    const handleJoinRoom = useCallback((e: React.FormEvent) => { 
+        e.preventDefault(); 
+        if (inputRoomCode.trim()) { 
+            setRole('student'); 
+            socketRef.current.emit('join-interview-room', { roomCode: inputRoomCode.trim().toUpperCase(), userName: user.name }); 
+        }
+    }, [user.name, inputRoomCode]);
 
     const handleCodeChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
         const newCode = e.target.value;
@@ -265,25 +277,25 @@ const InterviewRoomPage: React.FC<{ user: User }> = ({ user }) => {
                                 <input type="text" placeholder="ENTER ROOM CODE" value={inputRoomCode} onChange={e => setInputRoomCode(e.target.value)}
                                     className="w-full text-center tracking-widest font-mono bg-gray-700 text-white p-3 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none"/>
                                 <button type="submit" className="w-full py-3 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-500 transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed" disabled={!localStream || !isConnected}>
-                                    {isConnected ? 'Join as Student' : 'Connecting...'}
+                                    {isConnected ? 'Join Room' : 'Connecting...'}
                                 </button>
                             </form>
                          </div>
+                         {error && <p className="mt-4 text-center text-red-400 bg-red-900/50 p-3 rounded-lg animate-fade-in">{error}</p>}
                     </div>
                 );
         }
     }
 
     return (
-        <div className="h-full flex flex-col bg-gray-900/50 rounded-lg p-2 md:p-6">
-             <div className="mb-4 flex-shrink-0">
-                <h1 className="text-2xl md:text-3xl font-bold text-white">1-on-1 Interview Room</h1>
-                <p className="mt-1 text-gray-400 text-sm md:text-base">A real-time, collaborative environment for technical interviews.</p>
-             </div>
-             {error && <p className="mb-4 text-center text-red-400 bg-red-900/50 p-3 rounded-lg animate-fade-in">{error}</p>}
-             <div className="flex-grow flex items-center justify-center min-h-0">
+        <div className="h-full flex flex-col bg-gray-800 rounded-lg p-4 md:p-6">
+            <div className="mb-4 flex-shrink-0">
+                <h1 className="text-2xl md:text-3xl font-bold text-white">1-on-1 Interview</h1>
+                <p className="mt-1 text-gray-400 text-sm md:text-base">A private room with a shared code editor and video chat for mock interviews.</p>
+            </div>
+            <div className="flex-grow flex items-center justify-center min-h-0">
                 {renderContent()}
-             </div>
+            </div>
         </div>
     );
 };
