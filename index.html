@@ -4,8 +4,26 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Google Authentication</title>
+    <title>CS Interview Prep</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            animation: {
+              'fade-in': 'fadeIn 0.5s ease-in-out',
+              'fade-in-down': 'fadeInDown 0.5s ease-in-out',
+               'fade-in-up': 'fadeInUp 0.5s ease-in-out',
+            },
+            keyframes: {
+              fadeIn: { '0%': { opacity: 0 }, '100%': { opacity: 1 } },
+              fadeInDown: { '0%': { opacity: 0, transform: 'translateY(-20px)' }, '100%': { opacity: 1, transform: 'translateY(0)' } },
+              fadeInUp: { '0%': { opacity: 0, transform: 'translateY(20px)' }, '100%': { opacity: 1, transform: 'translateY(0)' } },
+            },
+          },
+        },
+      };
+    </script>
   <script type="importmap">
 {
   "imports": {
@@ -14,13 +32,15 @@
     "react-dom/": "https://esm.sh/react-dom@^19.1.1/",
     "@react-oauth/google/": "https://esm.sh/@react-oauth/google@^0.12.1/",
     "@react-oauth/google": "https://esm.sh/@react-oauth/google@^0.12.1",
-    "jwt-decode": "https://esm.sh/jwt-decode@^4.0.0"
+    "jwt-decode": "https://esm.sh/jwt-decode@^4.0.0",
+    "@google/genai": "https://esm.sh/@google/genai@^0.12.0",
+    "marked": "https://esm.sh/marked@^12.0.2"
   }
 }
 </script>
 <link rel="stylesheet" href="/index.css">
 </head>
-  <body class="bg-gray-900">
+  <body class="bg-gray-900 text-gray-100">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

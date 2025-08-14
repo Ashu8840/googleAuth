@@ -1,5 +1,5 @@
 {
-  "name": "Google Auth Profile Viewer",
-  "description": "A web application that allows users to sign in using their Google account to view their profile information.",
+  "name": "CS Interview Prep",
+  "description": "An AI-powered platform for computer science students to prepare for technical interviews, featuring core subject explanations, mock tests, and collaborative tools.",
   "requestFramePermissions": []
 }
