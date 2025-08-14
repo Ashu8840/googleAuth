@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { GoogleGenAI, Type } from '@google/genai';
 import { subjects } from '../data/subjects';
@@ -132,7 +133,7 @@ const MockTestsPage: React.FC = () => {
         <div className="h-full flex flex-col bg-gray-800 rounded-lg p-6 md:p-8 animate-fade-in-up">
             <div className="mb-6">
                 <p className="text-sm text-blue-400 font-semibold">{selectedCategory} Test</p>
-                <h2 className="text-2xl font-bold mt-1">{question.question}</h2>
+                <h2 className="text-xl md:text-2xl font-bold mt-1">{question.question}</h2>
                 <p className="text-gray-400 mt-2">Question {testState.currentQuestionIndex + 1} of {testState.questions.length}</p>
             </div>
             <div className="space-y-4">
@@ -145,7 +146,7 @@ const MockTestsPage: React.FC = () => {
                     }
                     return (
                         <button key={index} onClick={() => handleAnswer(index)} disabled={userAnswer !== null}
-                            className={`w-full text-left p-4 rounded-lg transition-all duration-300 text-white font-medium text-lg ${buttonClass} ${userAnswer !== null ? 'cursor-not-allowed' : ''}`}>
+                            className={`w-full text-left p-4 rounded-lg transition-all duration-300 text-white font-medium text-base md:text-lg ${buttonClass} ${userAnswer !== null ? 'cursor-not-allowed' : ''}`}>
                             {option}
                         </button>
                     );
@@ -158,10 +159,10 @@ const MockTestsPage: React.FC = () => {
   if (testState.status === 'finished') {
     return (
         <div className="h-full flex flex-col items-center justify-center bg-gray-800 rounded-lg p-8 text-center animate-fade-in">
-            <h2 className="text-4xl font-bold text-white">Test Complete!</h2>
-            <p className="text-xl text-gray-300 mt-2">You took the {selectedCategory} test.</p>
-            <p className="text-6xl font-bold my-8 text-blue-400">{((testState.score / testState.questions.length) * 100).toFixed(0)}%</p>
-            <p className="text-lg">You answered <span className="font-bold text-white">{testState.score}</span> out of <span className="font-bold text-white">{testState.questions.length}</span> questions correctly.</p>
+            <h2 className="text-3xl md:text-4xl font-bold text-white">Test Complete!</h2>
+            <p className="text-lg md:text-xl text-gray-300 mt-2">You took the {selectedCategory} test.</p>
+            <p className="text-5xl md:text-6xl font-bold my-8 text-blue-400">{((testState.score / testState.questions.length) * 100).toFixed(0)}%</p>
+            <p className="text-base md:text-lg">You answered <span className="font-bold text-white">{testState.score}</span> out of <span className="font-bold text-white">{testState.questions.length}</span> questions correctly.</p>
             <button onClick={resetTest} className="mt-8 px-8 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-500 transition-colors">
                 Take Another Test
             </button>
@@ -174,7 +175,7 @@ const MockTestsPage: React.FC = () => {
       <h1 className="text-3xl font-bold text-white">Mock Tests</h1>
       <p className="mt-2 text-gray-400">Select a category to start a short, AI-generated quiz.</p>
       {error && <p className="mt-4 text-red-400 bg-red-900/50 p-3 rounded-lg">{error}</p>}
-      <div className="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="mt-8 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {subjects.map(subject => (
           <button key={subject.name} onClick={() => startTest(subject.name)}
             className="p-6 bg-gray-700 rounded-lg text-left hover:bg-blue-600 hover:scale-105 transition-all duration-200">

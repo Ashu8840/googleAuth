@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 
 interface CalendarEvent {
@@ -72,10 +73,10 @@ const SchedulerPage: React.FC = () => {
                     const isCurrentMonth = d.getMonth() === currentDate.getMonth();
                     const dayEvents = events.filter(e => e.date === d.toISOString().split('T')[0]);
                     return (
-                        <div key={i} className={`p-2 h-24 rounded-lg flex flex-col ${isCurrentMonth ? 'bg-gray-900' : 'bg-gray-900/50 text-gray-500'}`}>
-                            <span className={`font-bold ${isToday ? 'text-blue-400' : ''}`}>{d.getDate()}</span>
+                        <div key={i} className={`p-1 md:p-2 h-20 md:h-24 rounded-lg flex flex-col ${isCurrentMonth ? 'bg-gray-900' : 'bg-gray-900/50 text-gray-500'}`}>
+                            <span className={`font-bold text-xs md:text-base ${isToday ? 'text-blue-400' : ''}`}>{d.getDate()}</span>
                             <div className="mt-1 overflow-y-auto text-xs">
-                                {dayEvents.map(e => <div key={e.id} className="p-1 bg-blue-600/50 rounded truncate">{e.title}</div>)}
+                                {dayEvents.map(e => <div key={e.id} className="p-1 bg-blue-600/50 rounded truncate text-white">{e.title}</div>)}
                             </div>
                         </div>
                     );
@@ -89,7 +90,7 @@ const SchedulerPage: React.FC = () => {
                 <h3 className="font-bold text-lg text-white mb-3">Add New Event</h3>
                 <form onSubmit={handleAddEvent} className="space-y-4">
                     <input type="text" placeholder="Event Title" value={newEventTitle} onChange={e => setNewEventTitle(e.target.value)} required className="w-full bg-gray-700 text-white p-2 rounded-md border border-gray-600"/>
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
                         <input type="date" value={newEventDate} onChange={e => setNewEventDate(e.target.value)} required className="w-full bg-gray-700 text-white p-2 rounded-md border border-gray-600"/>
                         <input type="time" value={newEventTime} onChange={e => setNewEventTime(e.target.value)} required className="w-full bg-gray-700 text-white p-2 rounded-md border border-gray-600"/>
                     </div>

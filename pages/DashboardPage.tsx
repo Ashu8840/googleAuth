@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { User } from '../types';
 import Sidebar from '../components/Sidebar';
@@ -33,9 +34,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) => {
   };
 
   return (
-    <div className="flex h-screen w-screen bg-gray-900 text-gray-100">
+    <div className="flex flex-col md:flex-row h-screen w-screen bg-gray-900 text-gray-100">
       <Sidebar user={user} onLogout={onLogout} activePage={activePage} setActivePage={setActivePage} />
-      <main className="flex-grow p-4 lg:p-6 overflow-auto">
+      <main className="flex-grow p-2 md:p-4 lg:p-6 overflow-auto">
         {renderActivePage()}
       </main>
     </div>
