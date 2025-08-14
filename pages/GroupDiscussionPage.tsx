@@ -28,6 +28,7 @@ const GroupDiscussionPage: React.FC<{ user: User }> = ({ user }) => {
     const [joinRoomCode, setJoinRoomCode] = useState('');
     const [participants, setParticipants] = useState<Participant[]>([]);
     const [error, setError] = useState<string | null>(null);
+    const [isConnected, setIsConnected] = useState(false);
 
     const socketRef = useRef<any>(null);
     const localStreamRef = useRef<MediaStream | null>(null);
@@ -56,7 +57,7 @@ const GroupDiscussionPage: React.FC<{ user: User }> = ({ user }) => {
     };
 
     const setupPeerConnection = useCallback((peerSocketId: string, initiator: boolean, stream: MediaStream) => {
-        if (peerConnectionsRef.current[peerSocketId]) return;
+        if (peerConnectionsRef.current[peerSocketId] || !socketRef.current) return;
 
         const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
         peerConnectionsRef.current[peerSocketId] = pc;
@@ -91,8 +92,7 @@ const GroupDiscussionPage: React.FC<{ user: User }> = ({ user }) => {
         navigator.mediaDevices.getUserMedia({ video: true, audio: true })
             .then(stream => {
                 localStreamRef.current = stream;
-                 // Force a re-render to show the local video
-                setParticipants(prev => [...prev]);
+                setParticipants(prev => [...prev]); // Force a re-render to show the local video
             })
             .catch(err => {
                 console.error("Error accessing media devices.", err);
@@ -101,6 +101,9 @@ const GroupDiscussionPage: React.FC<{ user: User }> = ({ user }) => {
         
         const socket = socketRef.current;
 
+        socket.on('connect', () => setIsConnected(true));
+        socket.on('disconnect', () => setIsConnected(false));
+        
         socket.on('gd-room-created', (newRoomCode: string) => {
             setRoomCode(newRoomCode);
             setPageState('in-room');
@@ -116,7 +119,9 @@ const GroupDiscussionPage: React.FC<{ user: User }> = ({ user }) => {
         });
 
         socket.on('user-joining-gd', (data: { newParticipant: Participant }) => {
+             if (!localStreamRef.current) return;
              setParticipants(prev => [...prev, data.newParticipant]);
+             setupPeerConnection(data.newParticipant.id, false, localStreamRef.current);
         });
         
         socket.on('webrtc-signal', async (data: { from: string; signal: any }) => {
@@ -180,8 +185,8 @@ const GroupDiscussionPage: React.FC<{ user: User }> = ({ user }) => {
              <div className="bg-gray-800 p-6 md:p-8 rounded-lg shadow-xl mb-6">
                  <h2 className="text-xl md:text-2xl font-bold text-white text-center">Create Discussion Room</h2>
                  <p className="text-gray-400 text-center mt-2 text-sm md:text-base">Start a new GD room and invite others.</p>
-                 <button onClick={handleCreateRoom} className="w-full mt-4 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-500 transition-colors disabled:bg-gray-500" disabled={!localStreamRef.current}>
-                     Create Room
+                 <button onClick={handleCreateRoom} className="w-full mt-4 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-500 transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed" disabled={!localStreamRef.current || !isConnected}>
+                     {isConnected ? 'Create Room' : 'Connecting...'}
                  </button>
              </div>
              <div className="bg-gray-800 p-6 md:p-8 rounded-lg shadow-xl">
@@ -189,8 +194,8 @@ const GroupDiscussionPage: React.FC<{ user: User }> = ({ user }) => {
                 <form onSubmit={handleJoinRoom} className="mt-4 space-y-4">
                     <input type="text" placeholder="ENTER ROOM CODE" value={joinRoomCode} onChange={e => setJoinRoomCode(e.target.value)}
                         className="w-full text-center tracking-widest font-mono bg-gray-700 text-white p-3 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none"/>
-                    <button type="submit" className="w-full py-3 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-500 transition-colors disabled:bg-gray-500" disabled={!localStreamRef.current}>
-                        Join Room
+                    <button type="submit" className="w-full py-3 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-500 transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed" disabled={!localStreamRef.current || !isConnected}>
+                        {isConnected ? 'Join Room' : 'Connecting...'}
                     </button>
                 </form>
              </div>

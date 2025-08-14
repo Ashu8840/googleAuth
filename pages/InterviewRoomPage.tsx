@@ -45,6 +45,7 @@ const InterviewRoomPage: React.FC<{ user: User }> = ({ user }) => {
     const [inputRoomCode, setInputRoomCode] = useState('');
     const [editorCode, setEditorCode] = useState('');
     const [output, setOutput] = useState('// Code output will appear here');
+    const [isConnected, setIsConnected] = useState(false);
     
     // Use refs for objects that should not trigger re-renders
     const socketRef = useRef<any>(null);
@@ -76,40 +77,8 @@ const InterviewRoomPage: React.FC<{ user: User }> = ({ user }) => {
         setInputRoomCode('');
     }, []);
 
-    // Effect for initializing and cleaning up the socket connection
-    useEffect(() => {
-        socketRef.current = io('https://googleauth-bu6c.onrender.com', { transports: ['websocket'] });
-        
-        navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-            .then(stream => {
-                localStreamRef.current = stream;
-                setLocalStream(stream);
-            })
-            .catch(err => {
-                console.error("Error accessing media devices.", err);
-                setError("Camera/mic access denied. Please enable permissions and refresh.");
-                setPageState('error');
-            });
-            
-        const socket = socketRef.current;
-        socket.on('interview-room-created', (newRoomCode: string) => { setRoomCode(newRoomCode); setPageState('waiting'); });
-        socket.on('code-updated', (newCode: string) => setEditorCode(newCode));
-        socket.on('output-updated', (newOutput: string) => setOutput(newOutput));
-        socket.on('partner-disconnected', () => {
-             setError('The other participant has disconnected.');
-             handleLeaveRoom();
-        });
-        socket.on('connect_error', () => { setError("Failed to connect to server."); setPageState('error'); });
-        socket.on('error', (errorMessage: string) => { setError(errorMessage); setPageState('lobby'); setRoomCode(''); });
-
-        return () => {
-            handleLeaveRoom();
-            socket.disconnect();
-        };
-    }, [handleLeaveRoom]);
-    
     const setupPeerConnection = useCallback((peerId: string, isInitiator: boolean) => {
-        if (!localStreamRef.current) return;
+        if (!localStreamRef.current || !socketRef.current) return;
         
         const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
         peerConnectionRef.current = pc;
@@ -128,26 +97,52 @@ const InterviewRoomPage: React.FC<{ user: User }> = ({ user }) => {
             pc.createOffer()
                 .then(offer => pc.setLocalDescription(offer))
                 .then(() => {
-                    socketRef.current?.emit('webrtc-signal', { to: peerId, signal: { type: 'offer', sdp: pc.localDescription } });
+                    if (pc.localDescription) {
+                        socketRef.current?.emit('webrtc-signal', { to: peerId, signal: { type: 'offer', sdp: pc.localDescription } });
+                    }
                 });
         }
     }, []);
-    
-    // Effect for handling WebRTC signaling and room readiness
+
+    // Effect for initializing and cleaning up the socket connection
     useEffect(() => {
-        const socket = socketRef.current;
-        if (!socket) return;
+        socketRef.current = io('https://googleauth-bu6c.onrender.com', { transports: ['websocket'] });
         
+        navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+            .then(stream => {
+                localStreamRef.current = stream;
+                setLocalStream(stream);
+            })
+            .catch(err => {
+                console.error("Error accessing media devices.", err);
+                setError("Camera/mic access denied. Please enable permissions and refresh.");
+                setPageState('error');
+            });
+            
+        const socket = socketRef.current;
+        socket.on('connect', () => setIsConnected(true));
+        socket.on('disconnect', () => setIsConnected(false));
+        socket.on('interview-room-created', (newRoomCode: string) => { setRoomCode(newRoomCode); setPageState('waiting'); });
+        socket.on('code-updated', (newCode: string) => setEditorCode(newCode));
+        socket.on('output-updated', (newOutput: string) => setOutput(newOutput));
+        socket.on('partner-disconnected', () => {
+             setError('The other participant has disconnected.');
+             handleLeaveRoom();
+        });
+        socket.on('connect_error', () => { setError("Failed to connect to server."); setPageState('error'); });
+        socket.on('error', (errorMessage: string) => { setError(errorMessage); setPageState('lobby'); setRoomCode(''); });
+
         const handleRoomReady = (data: { roomData: RoomState, roomCode: string }) => {
             setRoomCode(data.roomCode);
             setRoomState(data.roomData);
             setEditorCode(data.roomData.code);
             setPageState('in-room');
             setError(null);
-            
-            const partner = role === 'interviewer' ? data.roomData.student : data.roomData.interviewer;
+
+            const currentRole = socket.id === data.roomData.interviewer.id ? 'interviewer' : 'student';
+            const partner = currentRole === 'interviewer' ? data.roomData.student : data.roomData.interviewer;
             if (partner) {
-                const isInitiator = role === 'interviewer';
+                const isInitiator = currentRole === 'interviewer';
                 setupPeerConnection(partner.id, isInitiator);
             }
         };
@@ -171,15 +166,15 @@ const InterviewRoomPage: React.FC<{ user: User }> = ({ user }) => {
                 try { await pc.addIceCandidate(new RTCIceCandidate(data.signal.candidate)); } catch (e) { console.error('Error adding ICE candidate', e); }
             }
         };
-        
+
         socket.on('interview-room-ready', handleRoomReady);
         socket.on('webrtc-signal', handleWebrtcSignal);
 
         return () => {
-            socket.off('interview-room-ready', handleRoomReady);
-            socket.off('webrtc-signal', handleWebrtcSignal);
-        }
-    }, [role, setupPeerConnection]);
+            handleLeaveRoom();
+            socket.disconnect();
+        };
+    }, [handleLeaveRoom, setupPeerConnection]);
 
     const handleCreateRoom = () => { setRole('interviewer'); socketRef.current.emit('create-interview-room', { userName: user.name }); };
     const handleJoinRoom = (e: React.FormEvent) => { e.preventDefault(); if (inputRoomCode.trim()) { setRole('student'); socketRef.current.emit('join-interview-room', { roomCode: inputRoomCode.trim().toUpperCase(), userName: user.name }); }};
@@ -214,15 +209,16 @@ const InterviewRoomPage: React.FC<{ user: User }> = ({ user }) => {
         switch (pageState) {
             case 'in-room':
                 if (!roomState) return null;
+                const myRole = socketRef.current.id === roomState.interviewer.id ? 'interviewer' : 'student';
                 return (
                     <div className="h-full flex flex-col md:flex-row gap-4 animate-fade-in">
                         <div className="w-full md:w-1/2 lg:w-3/5 flex flex-col gap-4 min-h-0">
                              <div className="bg-gray-900 rounded-lg flex flex-col flex-1 min-h-0">
                                 <div className="p-3 border-b border-gray-700 flex justify-between items-center flex-shrink-0">
                                     <h3 className="font-bold text-white">JavaScript Canvas</h3>
-                                    {role === 'student' && <button onClick={handleRunCode} className="px-4 py-1 bg-green-600 text-white text-sm font-semibold rounded hover:bg-green-500">Run Code</button>}
+                                    {myRole === 'student' && <button onClick={handleRunCode} className="px-4 py-1 bg-green-600 text-white text-sm font-semibold rounded hover:bg-green-500">Run Code</button>}
                                 </div>
-                                <textarea value={editorCode} onChange={handleCodeChange} readOnly={role !== 'student'}
+                                <textarea value={editorCode} onChange={handleCodeChange} readOnly={myRole !== 'student'}
                                     className="w-full h-full flex-grow bg-[#1e1e1e] text-white font-mono p-4 text-sm resize-none focus:outline-none"
                                     placeholder="Write your JavaScript code here..."/>
                             </div>
@@ -232,8 +228,8 @@ const InterviewRoomPage: React.FC<{ user: User }> = ({ user }) => {
                             </div>
                         </div>
                         <div className="w-full md:w-1/2 lg:w-2/5 flex flex-col justify-center items-center gap-4">
-                            <VideoDisplay stream={role === 'interviewer' ? localStream : remoteStream} name={roomState.interviewer.name} role="Interviewer" isMuted={role === 'interviewer'} />
-                            <VideoDisplay stream={role === 'student' ? localStream : remoteStream} name={roomState.student?.name ?? 'Waiting...'} role="Student" isMuted={role === 'student'} />
+                            <VideoDisplay stream={myRole === 'interviewer' ? localStream : remoteStream} name={roomState.interviewer.name} role="Interviewer" isMuted={myRole === 'interviewer'} />
+                            <VideoDisplay stream={myRole === 'student' ? localStream : remoteStream} name={roomState.student?.name ?? 'Waiting...'} role="Student" isMuted={myRole === 'student'} />
                              <button onClick={handleLeaveRoom} className="w-full mt-2 px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-500 transition-colors">End Interview</button>
                         </div>
                     </div>
@@ -258,7 +254,9 @@ const InterviewRoomPage: React.FC<{ user: User }> = ({ user }) => {
                          <div className="bg-gray-800 p-8 rounded-lg shadow-xl mb-6">
                              <h2 className="text-2xl font-bold text-white text-center">Interviewer</h2>
                              <p className="text-gray-400 text-center mt-2">Create a private room to conduct a 1-on-1 interview.</p>
-                             <button onClick={handleCreateRoom} className="w-full mt-4 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-500 transition-colors" disabled={!localStream}>Create Interview Room</button>
+                             <button onClick={handleCreateRoom} className="w-full mt-4 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-500 transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed" disabled={!localStream || !isConnected}>
+                                {isConnected ? 'Create Interview Room' : 'Connecting...'}
+                             </button>
                          </div>
                          <div className="bg-gray-800 p-8 rounded-lg shadow-xl">
                             <h2 className="text-2xl font-bold text-white text-center">Student</h2>
@@ -266,7 +264,9 @@ const InterviewRoomPage: React.FC<{ user: User }> = ({ user }) => {
                             <form onSubmit={handleJoinRoom} className="mt-4 space-y-4">
                                 <input type="text" placeholder="ENTER ROOM CODE" value={inputRoomCode} onChange={e => setInputRoomCode(e.target.value)}
                                     className="w-full text-center tracking-widest font-mono bg-gray-700 text-white p-3 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none"/>
-                                <button type="submit" className="w-full py-3 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-500 transition-colors" disabled={!localStream}>Join as Student</button>
+                                <button type="submit" className="w-full py-3 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-500 transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed" disabled={!localStream || !isConnected}>
+                                    {isConnected ? 'Join as Student' : 'Connecting...'}
+                                </button>
                             </form>
                          </div>
                     </div>
