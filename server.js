@@ -4,10 +4,11 @@
 // 2. Install dependencies: `npm install express socket.io cors`
 // 3. Run the server: `node server.js`
 
-const express = require('express');
-const http = require('http');
-const { Server } = require("socket.io");
-const cors = require('cors');
+import express from 'express';
+import http from 'http';
+import { Server } from 'socket.io';
+import cors from 'cors';
+
 
 const app = express();
 app.use(cors());
