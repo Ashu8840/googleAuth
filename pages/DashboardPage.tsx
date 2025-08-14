@@ -5,6 +5,7 @@ import CoreSubjectsPage from './CoreSubjectsPage';
 import MockTestsPage from './MockTestsPage';
 import GroupDiscussionPage from './GroupDiscussionPage';
 import SchedulerPage from './SchedulerPage';
+import InterviewRoomPage from './InterviewRoomPage';
 
 interface DashboardPageProps {
   user: User;
@@ -21,7 +22,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) => {
       case 'Mock Tests':
         return <MockTestsPage />;
       case 'Group Discussion':
-        return <GroupDiscussionPage />;
+        return <GroupDiscussionPage user={user} />;
+      case '1-on-1 Interview':
+        return <InterviewRoomPage user={user} />;
       case 'Scheduler':
         return <SchedulerPage />;
       default:
