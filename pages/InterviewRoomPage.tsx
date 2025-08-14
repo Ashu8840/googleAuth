@@ -37,151 +37,149 @@ const VideoDisplay: React.FC<{ stream: MediaStream | null, name: string, role: s
     );
 };
 
-
 const InterviewRoomPage: React.FC<{ user: User }> = ({ user }) => {
     const [pageState, setPageState] = useState<PageState>('lobby');
     const [error, setError] = useState<string | null>(null);
     const [role, setRole] = useState<Role | null>(null);
     const [roomCode, setRoomCode] = useState('');
     const [inputRoomCode, setInputRoomCode] = useState('');
-    
-    const [roomState, setRoomState] = useState<RoomState | null>(null);
     const [editorCode, setEditorCode] = useState('');
     const [output, setOutput] = useState('// Code output will appear here');
-
-    const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-    const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
     
+    // Use refs for objects that should not trigger re-renders
     const socketRef = useRef<any>(null);
+    const localStreamRef = useRef<MediaStream | null>(null);
     const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
     const codeChangeTimeoutRef = useRef<number | null>(null);
+    
+    // Use state for values that should trigger UI updates
+    const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+    const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+    const [roomState, setRoomState] = useState<RoomState | null>(null);
 
-    const cleanup = () => {
-        localStream?.getTracks().forEach(track => track.stop());
+    const handleLeaveRoom = useCallback(() => {
+        socketRef.current?.emit('leave-interview-room');
+        
+        localStreamRef.current?.getTracks().forEach(track => track.stop());
+        localStreamRef.current = null;
+        setLocalStream(null);
+        
         peerConnectionRef.current?.close();
         peerConnectionRef.current = null;
-        setLocalStream(null);
         setRemoteStream(null);
-    };
-
-    const handleLeaveRoom = () => {
-        socketRef.current?.emit('leave-interview-room');
-        cleanup();
+        
         setPageState('lobby');
         setRole(null);
         setRoomCode('');
-        setInputRoomCode('');
-        setError(null);
         setRoomState(null);
-    };
-    
-    const getMedia = useCallback(async () => {
-        try {
-            const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-            setLocalStream(mediaStream);
-            return mediaStream;
-        } catch (err) {
-            console.error("Error accessing media devices.", err);
-            setError("Camera/mic access denied. Please enable permissions and refresh.");
-            setPageState('error');
-            return null;
-        }
+        setError(null);
+        setInputRoomCode('');
     }, []);
 
-    const createPeerConnection = useCallback((peerId: string, isInitiator: boolean, currentStream: MediaStream) => {
-        if (peerConnectionRef.current) peerConnectionRef.current.close();
+    // Effect for initializing and cleaning up the socket connection
+    useEffect(() => {
+        socketRef.current = io('https://googleauth-bu6c.onrender.com', { transports: ['websocket'] });
+        
+        navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+            .then(stream => {
+                localStreamRef.current = stream;
+                setLocalStream(stream);
+            })
+            .catch(err => {
+                console.error("Error accessing media devices.", err);
+                setError("Camera/mic access denied. Please enable permissions and refresh.");
+                setPageState('error');
+            });
+            
+        const socket = socketRef.current;
+        socket.on('interview-room-created', (newRoomCode: string) => { setRoomCode(newRoomCode); setPageState('waiting'); });
+        socket.on('code-updated', (newCode: string) => setEditorCode(newCode));
+        socket.on('output-updated', (newOutput: string) => setOutput(newOutput));
+        socket.on('partner-disconnected', () => {
+             setError('The other participant has disconnected.');
+             handleLeaveRoom();
+        });
+        socket.on('connect_error', () => { setError("Failed to connect to server."); setPageState('error'); });
+        socket.on('error', (errorMessage: string) => { setError(errorMessage); setPageState('lobby'); setRoomCode(''); });
+
+        return () => {
+            handleLeaveRoom();
+            socket.disconnect();
+        };
+    }, [handleLeaveRoom]);
+    
+    const setupPeerConnection = useCallback((peerId: string, isInitiator: boolean) => {
+        if (!localStreamRef.current) return;
         
         const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
         peerConnectionRef.current = pc;
-
-        currentStream.getTracks().forEach(track => pc.addTrack(track, currentStream));
+        
+        localStreamRef.current.getTracks().forEach(track => pc.addTrack(track, localStreamRef.current!));
 
         pc.onicecandidate = event => {
-            if (event.candidate && socketRef.current) {
-                socketRef.current.emit('webrtc-signal', { to: peerId, signal: { type: 'candidate', candidate: event.candidate } });
+            if (event.candidate) {
+                socketRef.current?.emit('webrtc-signal', { to: peerId, signal: { type: 'candidate', candidate: event.candidate } });
             }
         };
 
         pc.ontrack = event => setRemoteStream(event.streams[0]);
 
-        if (isInitiator && socketRef.current) {
+        if (isInitiator) {
             pc.createOffer()
                 .then(offer => pc.setLocalDescription(offer))
                 .then(() => {
-                    if (pc.localDescription) {
-                        socketRef.current.emit('webrtc-signal', { to: peerId, signal: { type: 'offer', sdp: pc.localDescription } });
-                    }
+                    socketRef.current?.emit('webrtc-signal', { to: peerId, signal: { type: 'offer', sdp: pc.localDescription } });
                 });
         }
     }, []);
-
+    
+    // Effect for handling WebRTC signaling and room readiness
     useEffect(() => {
-        const socket = io('https://googleauth-bu6c.onrender.com', { transports: ['websocket'] });
-        socketRef.current = socket;
-        getMedia();
-
-        const handleConnectError = () => { setError("Failed to connect to server."); setPageState('error'); };
-        const handleError = (errorMessage: string) => { setError(errorMessage); setPageState('lobby'); setRoomCode(''); };
-        const handleInterviewRoomCreated = (newRoomCode: string) => { setRoomCode(newRoomCode); setPageState('waiting'); };
+        const socket = socketRef.current;
+        if (!socket) return;
         
-        const handleInterviewRoomReady = (data: { roomData: RoomState, roomCode: string }) => {
-            if (!data || !data.roomData) {
-                setError("Received invalid room data from server.");
-                setPageState('error');
-                return;
-            }
+        const handleRoomReady = (data: { roomData: RoomState, roomCode: string }) => {
             setRoomCode(data.roomCode);
             setRoomState(data.roomData);
             setEditorCode(data.roomData.code);
             setPageState('in-room');
             setError(null);
-
-            const selfId = socket.id;
+            
             const partner = role === 'interviewer' ? data.roomData.student : data.roomData.interviewer;
-            if(localStream && partner && partner.id !== selfId){
+            if (partner) {
                 const isInitiator = role === 'interviewer';
-                createPeerConnection(partner.id, isInitiator, localStream);
+                setupPeerConnection(partner.id, isInitiator);
             }
         };
 
         const handleWebrtcSignal = async (data: { from: string; signal: any }) => {
-            if(!localStream) return;
-            if (!peerConnectionRef.current) createPeerConnection(data.from, false, localStream);
-            const pc = peerConnectionRef.current;
+            let pc = peerConnectionRef.current;
+            if (!pc) {
+                setupPeerConnection(data.from, false);
+                pc = peerConnectionRef.current;
+            }
             if (!pc) return;
 
-            if (data.signal.type === 'offer') {
+            if (data.signal.sdp) {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.signal.sdp));
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-                socketRef.current.emit('webrtc-signal', { to: data.from, signal: { type: 'answer', sdp: pc.localDescription } });
-            } else if (data.signal.type === 'answer') {
-                await pc.setRemoteDescription(new RTCSessionDescription(data.signal.sdp));
-            } else if (data.signal.type === 'candidate') {
-                 try { await pc.addIceCandidate(new RTCIceCandidate(data.signal.candidate)); } catch (e) { console.error('Error adding ICE candidate', e); }
+                if (data.signal.type === 'offer') {
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    socket.emit('webrtc-signal', { to: data.from, signal: { type: 'answer', sdp: pc.localDescription } });
+                }
+            } else if (data.signal.candidate) {
+                try { await pc.addIceCandidate(new RTCIceCandidate(data.signal.candidate)); } catch (e) { console.error('Error adding ICE candidate', e); }
             }
         };
-        const handleCodeUpdated = (newCode: string) => setEditorCode(newCode);
-        const handleOutputUpdated = (newOutput: string) => setOutput(newOutput);
-        const handlePartnerDisconnected = () => {
-             setError('The other participant has disconnected. Returning to lobby.');
-             handleLeaveRoom();
-        };
-
-        socket.on('connect_error', handleConnectError);
-        socket.on('error', handleError);
-        socket.on('interview-room-created', handleInterviewRoomCreated);
-        socket.on('interview-room-ready', handleInterviewRoomReady);
+        
+        socket.on('interview-room-ready', handleRoomReady);
         socket.on('webrtc-signal', handleWebrtcSignal);
-        socket.on('code-updated', handleCodeUpdated);
-        socket.on('output-updated', handleOutputUpdated);
-        socket.on('partner-disconnected', handlePartnerDisconnected);
 
         return () => {
-            cleanup();
-            socket.disconnect();
-        };
-    }, [getMedia, createPeerConnection, role, localStream]);
+            socket.off('interview-room-ready', handleRoomReady);
+            socket.off('webrtc-signal', handleWebrtcSignal);
+        }
+    }, [role, setupPeerConnection]);
 
     const handleCreateRoom = () => { setRole('interviewer'); socketRef.current.emit('create-interview-room', { userName: user.name }); };
     const handleJoinRoom = (e: React.FormEvent) => { e.preventDefault(); if (inputRoomCode.trim()) { setRole('student'); socketRef.current.emit('join-interview-room', { roomCode: inputRoomCode.trim().toUpperCase(), userName: user.name }); }};
@@ -192,32 +190,32 @@ const InterviewRoomPage: React.FC<{ user: User }> = ({ user }) => {
         if (codeChangeTimeoutRef.current) clearTimeout(codeChangeTimeoutRef.current);
         codeChangeTimeoutRef.current = window.setTimeout(() => {
             socketRef.current.emit('code-change', { roomCode, newCode });
-        }, 250);
+        }, 300);
     };
 
-    const runCode = (codeToRun: string) => {
+    const handleRunCode = () => {
         let logs: string[] = [];
         const oldLog = console.log;
         console.log = (...args) => logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' '));
         try {
-            new Function(codeToRun)();
-            return logs.length > 0 ? logs.join('\n') : '// Code ran successfully with no output.';
-        } catch (e: any) { return `Error: ${e.message}`; }
+            new Function(editorCode)();
+            const result = logs.length > 0 ? logs.join('\n') : '// Code ran successfully with no output.';
+            setOutput(result);
+            socketRef.current.emit('code-run', { roomCode, output: result });
+        } catch (e: any) { 
+            const errorResult = `Error: ${e.message}`;
+            setOutput(errorResult);
+            socketRef.current.emit('code-run', { roomCode, output: errorResult });
+        }
         finally { console.log = oldLog; }
     };
-
-    const handleRunCode = () => {
-        const result = runCode(editorCode);
-        setOutput(result);
-        socketRef.current.emit('code-run', { roomCode, output: result });
-    };
-
+    
     const renderContent = () => {
         switch (pageState) {
             case 'in-room':
+                if (!roomState) return null;
                 return (
                     <div className="h-full flex flex-col md:flex-row gap-4 animate-fade-in">
-                        {/* Left side: Code and Output */}
                         <div className="w-full md:w-1/2 lg:w-3/5 flex flex-col gap-4 min-h-0">
                              <div className="bg-gray-900 rounded-lg flex flex-col flex-1 min-h-0">
                                 <div className="p-3 border-b border-gray-700 flex justify-between items-center flex-shrink-0">
@@ -233,10 +231,9 @@ const InterviewRoomPage: React.FC<{ user: User }> = ({ user }) => {
                                 <pre className="w-full h-full flex-grow bg-[#1e1e1e] text-gray-300 font-mono p-4 text-xs whitespace-pre-wrap overflow-auto">{output}</pre>
                             </div>
                         </div>
-                        {/* Right side: Video Feeds and Controls */}
                         <div className="w-full md:w-1/2 lg:w-2/5 flex flex-col justify-center items-center gap-4">
-                            <VideoDisplay stream={role === 'interviewer' ? localStream : remoteStream} name={roomState?.interviewer?.name ?? 'Interviewer'} role="Interviewer" isMuted={role === 'interviewer'} />
-                            <VideoDisplay stream={role === 'student' ? localStream : remoteStream} name={roomState?.student?.name ?? 'Waiting for student...'} role="Student" isMuted={role === 'student'} />
+                            <VideoDisplay stream={role === 'interviewer' ? localStream : remoteStream} name={roomState.interviewer.name} role="Interviewer" isMuted={role === 'interviewer'} />
+                            <VideoDisplay stream={role === 'student' ? localStream : remoteStream} name={roomState.student?.name ?? 'Waiting...'} role="Student" isMuted={role === 'student'} />
                              <button onClick={handleLeaveRoom} className="w-full mt-2 px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-500 transition-colors">End Interview</button>
                         </div>
                     </div>

@@ -27,6 +27,29 @@ const generateRoomCode = () => {
     return Math.random().toString(36).substring(2, 7).toUpperCase();
 }
 
+const cleanupRoomForSocket = (socket) => {
+    const { roomCode, roomType } = socket;
+    if (!roomCode || !roomType) return;
+
+    if (roomType === 'gd' && gdRooms[roomCode]) {
+        gdRooms[roomCode].participants = gdRooms[roomCode].participants.filter(p => p.id !== socket.id);
+        socket.to(roomCode).emit('user-left-gd', { socketId: socket.id });
+        if (gdRooms[roomCode].participants.length === 0) {
+            delete gdRooms[roomCode];
+            console.log(`GD Room ${roomCode} is now empty and closed.`);
+        }
+    } else if (roomType === 'interview' && interviewRooms[roomCode]) {
+        // Notify the remaining partner that the other has left
+        socket.to(roomCode).emit('partner-disconnected');
+        delete interviewRooms[roomCode];
+        console.log(`Interview room ${roomCode} closed.`);
+    }
+
+    socket.roomCode = null;
+    socket.roomType = null;
+}
+
+
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
 
@@ -35,6 +58,8 @@ io.on('connection', (socket) => {
     const roomCode = generateRoomCode();
     gdRooms[roomCode] = { participants: [{ id: socket.id, name: userName }] };
     socket.join(roomCode);
+    socket.roomCode = roomCode;
+    socket.roomType = 'gd';
     socket.emit('gd-room-created', roomCode);
     console.log(`GD Room ${roomCode} created by ${userName} (${socket.id})`);
   });
@@ -42,33 +67,25 @@ io.on('connection', (socket) => {
   socket.on('join-gd-room', ({ roomCode, userName }) => {
     const room = gdRooms[roomCode];
     if (room) {
+      const otherParticipants = room.participants;
+      socket.join(roomCode);
+      room.participants.push({ id: socket.id, name: userName });
+      
+      socket.roomCode = roomCode;
+      socket.roomType = 'gd';
+      
+      // Send the list of existing participants to the new user
+      socket.emit('joined-gd-room', { roomCode, participants: otherParticipants });
       // Notify existing participants that a new user is joining
       socket.to(roomCode).emit('user-joining-gd', { newParticipant: { id: socket.id, name: userName } });
       
-      socket.join(roomCode);
-      // Send the list of existing participants to the new user
-      socket.emit('joined-gd-room', { roomCode, participants: room.participants });
-      
-      // Add new participant to the room list
-      room.participants.push({ id: socket.id, name: userName });
-
       console.log(`${userName} (${socket.id}) joined GD Room ${roomCode}`);
     } else {
       socket.emit('error', 'Room not found. Please check the code and try again.');
     }
   });
 
-  socket.on('leave-gd-room', (roomCode) => {
-      socket.leave(roomCode);
-      if(gdRooms[roomCode]) {
-          gdRooms[roomCode].participants = gdRooms[roomCode].participants.filter(p => p.id !== socket.id);
-          socket.to(roomCode).emit('user-left-gd', { socketId: socket.id });
-          if (gdRooms[roomCode].participants.length === 0) {
-              delete gdRooms[roomCode];
-              console.log(`GD Room ${roomCode} is now empty and closed.`);
-          }
-      }
-  });
+  socket.on('leave-gd-room', () => cleanupRoomForSocket(socket));
 
   // --- 1-on-1 Interview Logic ---
   socket.on('create-interview-room', ({ userName }) => {
@@ -98,6 +115,8 @@ console.log("Factorial of 5 is:", findFactorial(5));
 `
       };
       socket.join(roomCode);
+      socket.roomCode = roomCode;
+      socket.roomType = 'interview';
       socket.emit('interview-room-created', roomCode);
       console.log(`Interview Room ${roomCode} created by ${userName}`);
   });
@@ -107,9 +126,11 @@ console.log("Factorial of 5 is:", findFactorial(5));
     if (room && !room.student) {
       room.student = { id: socket.id, name: userName };
       socket.join(roomCode);
-      // Notify both parties that the room is ready, sending the full room state and code
-      io.to(room.interviewer.id).emit('interview-room-ready', { roomData: room, roomCode: roomCode });
-      io.to(room.student.id).emit('interview-room-ready', { roomData: room, roomCode: roomCode });
+      socket.roomCode = roomCode;
+      socket.roomType = 'interview';
+      
+      // Notify both parties that the room is ready
+      io.to(roomCode).emit('interview-room-ready', { roomData: room, roomCode });
       console.log(`Student ${userName} joined Interview Room ${roomCode}`);
     } else if (room && room.student) {
         socket.emit('error', 'Interview room is already full.');
@@ -122,8 +143,6 @@ console.log("Factorial of 5 is:", findFactorial(5));
       const room = interviewRooms[roomCode];
       if (room) {
           room.code = newCode;
-          // Broadcast to the other user in the room, excluding the sender.
-          // This is the key fix for the input focus issue.
           socket.broadcast.to(roomCode).emit('code-updated', newCode);
       }
   });
@@ -133,6 +152,8 @@ console.log("Factorial of 5 is:", findFactorial(5));
           io.to(roomCode).emit('output-updated', output);
       }
   });
+  
+  socket.on('leave-interview-room', () => cleanupRoomForSocket(socket));
 
   // --- WebRTC Signaling Passthrough ---
   socket.on('webrtc-signal', (payload) => {
@@ -142,37 +163,9 @@ console.log("Factorial of 5 is:", findFactorial(5));
       });
   });
 
-  const cleanupRooms = () => {
-     // Clean up GD rooms
-    for (const roomCode in gdRooms) {
-        const room = gdRooms[roomCode];
-        const userIndex = room.participants.findIndex(p => p.id === socket.id);
-        if (userIndex !== -1) {
-            room.participants.splice(userIndex, 1);
-            socket.to(roomCode).emit('user-left-gd', { socketId: socket.id });
-             if (room.participants.length === 0) {
-              delete gdRooms[roomCode];
-              console.log(`GD Room ${roomCode} closed due to disconnect.`);
-          }
-          break; // User can only be in one room
-        }
-    }
-    // Clean up Interview rooms
-     for (const roomCode in interviewRooms) {
-        const room = interviewRooms[roomCode];
-        if (room.interviewer?.id === socket.id || room.student?.id === socket.id) {
-           socket.to(roomCode).emit('partner-disconnected');
-           delete interviewRooms[roomCode];
-           console.log(`Interview room ${roomCode} closed due to disconnect.`);
-           break; // User can only be in one room
-        }
-    }
-  };
-
-  socket.on('leave-interview-room', () => cleanupRooms());
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
-    cleanupRooms();
+    cleanupRoomForSocket(socket);
   });
 });
 
