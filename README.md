@@ -1,22 +1,16 @@
-# MERN Google Authentication & Login
+<div align="center">
+<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+</div>
 
-A MERN stack application with **Google OAuth 2.0 authentication** that allows users to log in using their Google account and securely access their personalized data.
+# Run and deploy your AI Studio app
 
-## 🚀 Features
-- Google OAuth 2.0 login
-- Secure authentication using JWT
-- User session management
-- Role-based access control (optional)
-- Protected routes for logged-in users
-- Responsive UI
+This contains everything you need to run your app locally.
 
-## 🛠️ Tech Stack
-- **Frontend:** React.js, @react-oauth/google, Axios, Tailwind CSS (or Bootstrap/CSS)
-- **Backend:** Node.js, Express.js, JSON Web Token (JWT)
-- **Database:** MongoDB (Mongoose)
-- **Other Tools:** Nodemon, Git, GitHub, dotenv
+View your app in AI Studio: https://ai.studio/apps/drive/1SOh2AinuHW41PufgZXBbvUemBFr7uvJC
 
-**Prerequisites:**  Node.js, React
+## Run Locally
+
+**Prerequisites:**  Node.js
 
 
 1. Install dependencies:

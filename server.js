@@ -22,44 +22,98 @@ const io = new Server(server, {
 
 const gdRooms = {}; // For Group Discussions
 const interviewRooms = {}; // For 1-on-1 Interviews
+const users = {}; // For user presence and private messaging { email: { socketId, name, picture, uniqueName } }
 
 const generateRoomCode = () => {
     return Math.random().toString(36).substring(2, 7).toUpperCase();
 }
 
 const cleanupRoomForSocket = (socket) => {
-    const { roomCode, roomType } = socket;
-    if (!roomCode || !roomType) return;
-
-    if (roomType === 'gd' && gdRooms[roomCode]) {
-        gdRooms[roomCode].participants = gdRooms[roomCode].participants.filter(p => p.id !== socket.id);
-        socket.to(roomCode).emit('user-left-gd', { socketId: socket.id });
-        if (gdRooms[roomCode].participants.length === 0) {
-            delete gdRooms[roomCode];
-            console.log(`GD Room ${roomCode} is now empty and closed.`);
+    // GD Room Cleanup
+    Object.keys(gdRooms).forEach(roomCode => {
+        const room = gdRooms[roomCode];
+        const participantIndex = room.participants.findIndex(p => p.id === socket.id);
+        if (participantIndex > -1) {
+            room.participants.splice(participantIndex, 1);
+            socket.to(roomCode).emit('user-left-gd', { socketId: socket.id });
+            if (room.participants.length === 0) {
+                delete gdRooms[roomCode];
+                console.log(`GD Room ${roomCode} is now empty and closed.`);
+            }
         }
-    } else if (roomType === 'interview' && interviewRooms[roomCode]) {
-        // Notify the remaining partner that the other has left
-        socket.to(roomCode).emit('partner-disconnected');
-        delete interviewRooms[roomCode];
-        console.log(`Interview room ${roomCode} closed.`);
-    }
+    });
 
-    socket.roomCode = null;
-    socket.roomType = null;
+    // Interview Room Cleanup
+    Object.keys(interviewRooms).forEach(roomCode => {
+        const room = interviewRooms[roomCode];
+        if (room.interviewer?.id === socket.id || room.student?.id === socket.id) {
+            socket.to(roomCode).emit('partner-disconnected');
+            delete interviewRooms[roomCode];
+            console.log(`Interview room ${roomCode} closed.`);
+        }
+    });
 }
 
 
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
 
+  // --- User Presence ---
+  socket.on('register', (user) => {
+      socket.email = user.email;
+      users[user.email] = {
+          socketId: socket.id,
+          name: user.name,
+          picture: user.picture,
+          uniqueName: user.uniqueName
+      };
+      io.emit('online-users', Object.keys(users));
+      console.log(`User registered: ${user.email} as ${user.uniqueName}`);
+  });
+  
+  // --- Private Messaging ---
+  socket.on('private-message', ({ to, message }) => {
+      const recipient = users[to];
+      if (recipient) {
+          io.to(recipient.socketId).emit('private-message', {
+              from: socket.email,
+              message,
+              fromUniqueName: users[socket.email]?.uniqueName || 'User'
+          });
+      }
+  });
+
+  // --- 1-on-1 Calling ---
+  socket.on('initiate-call', ({ to }) => {
+    const recipient = users[to];
+    if (recipient) {
+        io.to(recipient.socketId).emit('incoming-call', { from: socket.email, fromInfo: users[socket.email] });
+    }
+  });
+  socket.on('accept-call', ({ to }) => {
+    const recipient = users[to];
+    if (recipient) {
+        io.to(recipient.socketId).emit('call-accepted', { by: socket.email });
+    }
+  });
+  socket.on('decline-call', ({ to }) => {
+    const recipient = users[to];
+    if (recipient) {
+        io.to(recipient.socketId).emit('call-declined', { by: socket.email });
+    }
+  });
+  socket.on('end-call', ({ peerEmail }) => {
+    const recipient = users[peerEmail];
+    if (recipient) {
+        io.to(recipient.socketId).emit('call-ended');
+    }
+  });
+
   // --- Group Discussion Logic ---
   socket.on('create-gd-room', ({ userName }) => {
     const roomCode = generateRoomCode();
     gdRooms[roomCode] = { participants: [{ id: socket.id, name: userName }] };
     socket.join(roomCode);
-    socket.roomCode = roomCode;
-    socket.roomType = 'gd';
     socket.emit('gd-room-created', roomCode);
     console.log(`GD Room ${roomCode} created by ${userName} (${socket.id})`);
   });
@@ -70,9 +124,6 @@ io.on('connection', (socket) => {
       const otherParticipants = room.participants;
       socket.join(roomCode);
       room.participants.push({ id: socket.id, name: userName });
-      
-      socket.roomCode = roomCode;
-      socket.roomType = 'gd';
       
       // Send the list of existing participants to the new user
       socket.emit('joined-gd-room', { roomCode, participants: otherParticipants });
@@ -115,8 +166,6 @@ console.log("Factorial of 5 is:", findFactorial(5));
 `
       };
       socket.join(roomCode);
-      socket.roomCode = roomCode;
-      socket.roomType = 'interview';
       socket.emit('interview-room-created', roomCode);
       console.log(`Interview Room ${roomCode} created by ${userName}`);
   });
@@ -126,8 +175,6 @@ console.log("Factorial of 5 is:", findFactorial(5));
     if (room && !room.student) {
       room.student = { id: socket.id, name: userName };
       socket.join(roomCode);
-      socket.roomCode = roomCode;
-      socket.roomType = 'interview';
       
       // Notify both parties that the room is ready
       io.to(roomCode).emit('interview-room-ready', { roomData: room, roomCode });
@@ -157,7 +204,12 @@ console.log("Factorial of 5 is:", findFactorial(5));
 
   // --- WebRTC Signaling Passthrough ---
   socket.on('webrtc-signal', (payload) => {
-      io.to(payload.to).emit('webrtc-signal', {
+      const recipient = Object.values(users).find(u => u.socketId === payload.to);
+      const recipientEmail = Object.keys(users).find(key => users[key] === recipient);
+      
+      const targetSocketId = payload.to;
+
+      io.to(targetSocketId).emit('webrtc-signal', {
           from: socket.id,
           signal: payload.signal,
       });
@@ -165,6 +217,11 @@ console.log("Factorial of 5 is:", findFactorial(5));
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
+    if (socket.email && users[socket.email]) {
+        delete users[socket.email];
+        io.emit('online-users', Object.keys(users));
+        console.log(`User unregistered: ${socket.email}`);
+    }
     cleanupRoomForSocket(socket);
   });
 });
