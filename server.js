@@ -202,6 +202,14 @@ console.log("Factorial of 5 is:", findFactorial(5));
   
   socket.on('leave-interview-room', () => cleanupRoomForSocket(socket));
 
+  // --- Whiteboard Passthrough ---
+  socket.on('whiteboard-data', ({ roomCode, data }) => {
+      socket.to(roomCode).emit('whiteboard-data', data);
+  });
+  socket.on('whiteboard-clear', ({ roomCode }) => {
+      socket.to(roomCode).emit('whiteboard-clear');
+  });
+
   // --- WebRTC Signaling Passthrough ---
   socket.on('webrtc-signal', (payload) => {
       const recipient = Object.values(users).find(u => u.socketId === payload.to);

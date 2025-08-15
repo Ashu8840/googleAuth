@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { User } from '../types';
+import Whiteboard from '../components/Whiteboard';
 
 type Role = 'interviewer' | 'student';
 type PageState = 'lobby' | 'waiting' | 'in-room' | 'error';
@@ -35,6 +36,21 @@ const VideoDisplay: React.FC<{ stream: MediaStream | null, name: string, role: s
     );
 };
 
+const TabButton: React.FC<{ active: boolean, onClick: () => void, children: React.ReactNode }> = ({ active, onClick, children }) => (
+    <button
+        onClick={onClick}
+        className={`px-4 py-2 text-sm font-semibold transition-colors rounded-t-md
+            ${active
+                ? 'text-white bg-gray-900 border-b-2 border-blue-500'
+                : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
+            }
+        `}
+    >
+        {children}
+    </button>
+);
+
+
 const InterviewRoomPage: React.FC<{ user: User, socket: any }> = ({ user, socket }) => {
     const [pageState, setPageState] = useState<PageState>('lobby');
     const [error, setError] = useState<string | null>(null);
@@ -43,6 +59,7 @@ const InterviewRoomPage: React.FC<{ user: User, socket: any }> = ({ user, socket
     const [inputRoomCode, setInputRoomCode] = useState('');
     const [editorCode, setEditorCode] = useState('');
     const [output, setOutput] = useState('// Code output will appear here');
+    const [activeTab, setActiveTab] = useState<'code' | 'whiteboard'>('code');
     
     // Use refs for objects that should not trigger re-renders
     const localStreamRef = useRef<MediaStream | null>(null);
@@ -238,19 +255,34 @@ const InterviewRoomPage: React.FC<{ user: User, socket: any }> = ({ user, socket
                 return (
                     <div className="h-full flex flex-col md:flex-row gap-4 animate-fade-in">
                         <div className="w-full md:w-1/2 lg:w-3/5 flex flex-col gap-4 min-h-0">
-                             <div className="bg-gray-900 rounded-lg flex flex-col flex-1 min-h-0">
-                                <div className="p-3 border-b border-gray-700 flex justify-between items-center flex-shrink-0">
-                                    <h3 className="font-bold text-white">JavaScript Canvas</h3>
-                                    {myRole === 'student' && <button onClick={handleRunCode} className="px-4 py-1 bg-green-600 text-white text-sm font-semibold rounded hover:bg-green-500">Run Code</button>}
-                                </div>
-                                <textarea value={editorCode} onChange={handleCodeChange} readOnly={myRole !== 'student'}
-                                    className="w-full h-full flex-grow bg-[#1e1e1e] text-white font-mono p-4 text-sm resize-none focus:outline-none"
-                                    placeholder="Write your JavaScript code here..."/>
+                            <div className="flex items-center border-b border-gray-700 flex-shrink-0">
+                                <TabButton active={activeTab === 'code'} onClick={() => setActiveTab('code')}>
+                                    Code Editor
+                                </TabButton>
+                                <TabButton active={activeTab === 'whiteboard'} onClick={() => setActiveTab('whiteboard')}>
+                                    Whiteboard
+                                </TabButton>
                             </div>
-                            <div className="bg-gray-900 rounded-lg flex flex-col h-1/3 min-h-[150px] flex-shrink-0">
-                                <div className="p-3 border-b border-gray-700"><h3 className="font-bold text-white">Output</h3></div>
-                                <pre className="w-full h-full flex-grow bg-[#1e1e1e] text-gray-300 font-mono p-4 text-xs whitespace-pre-wrap overflow-auto">{output}</pre>
-                            </div>
+
+                            {activeTab === 'code' ? (
+                                <>
+                                    <div className="bg-gray-900 rounded-lg flex flex-col flex-1 min-h-0">
+                                        <div className="p-3 border-b border-gray-700 flex justify-between items-center flex-shrink-0">
+                                            <h3 className="font-bold text-white">JavaScript Canvas</h3>
+                                            {myRole === 'student' && <button onClick={handleRunCode} className="px-4 py-1 bg-green-600 text-white text-sm font-semibold rounded hover:bg-green-500">Run Code</button>}
+                                        </div>
+                                        <textarea value={editorCode} onChange={handleCodeChange} readOnly={myRole !== 'student'}
+                                            className="w-full h-full flex-grow bg-[#1e1e1e] text-white font-mono p-4 text-sm resize-none focus:outline-none"
+                                            placeholder="Write your JavaScript code here..."/>
+                                    </div>
+                                    <div className="bg-gray-900 rounded-lg flex flex-col h-1/3 min-h-[150px] flex-shrink-0">
+                                        <div className="p-3 border-b border-gray-700"><h3 className="font-bold text-white">Output</h3></div>
+                                        <pre className="w-full h-full flex-grow bg-[#1e1e1e] text-gray-300 font-mono p-4 text-xs whitespace-pre-wrap overflow-auto">{output}</pre>
+                                    </div>
+                                </>
+                            ) : (
+                                <Whiteboard socket={socket} roomCode={roomCode} />
+                            )}
                         </div>
                         <div className="w-full md:w-1/2 lg:w-2/5 flex flex-col justify-center items-center gap-4">
                             <VideoDisplay stream={myRole === 'interviewer' ? localStream : remoteStream} name={roomState.interviewer.name} role="Interviewer" isMuted={myRole === 'interviewer'} />
