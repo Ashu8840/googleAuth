@@ -3,6 +3,7 @@ export interface User {
   email: string;
   picture: string;
   uniqueName?: string;
+  bio?: string;
 }
 
 export interface Subject {
@@ -17,9 +18,4 @@ export interface ChatMessage {
     message: string;
     timestamp: number;
     fromUniqueName?: string;
-}
-
-export interface MockUser extends User {
-    id: number;
-    bio: string;
 }

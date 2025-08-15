@@ -22,7 +22,8 @@ const io = new Server(server, {
 
 const gdRooms = {}; // For Group Discussions
 const interviewRooms = {}; // For 1-on-1 Interviews
-const users = {}; // For user presence and private messaging { email: { socketId, name, picture, uniqueName } }
+const users = {}; // For ONLINE user presence { email: { socketId, name, picture, uniqueName, bio } }
+const registeredUsers = {}; // For ALL users, online or offline { email: { name, email, picture, uniqueName, bio } }
 
 const generateRoomCode = () => {
     return Math.random().toString(36).substring(2, 7).toUpperCase();
@@ -58,17 +59,54 @@ const cleanupRoomForSocket = (socket) => {
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
 
-  // --- User Presence ---
+  // --- User Presence & Profile Management ---
   socket.on('register', (user) => {
       socket.email = user.email;
+      
+      // Add to online users list
       users[user.email] = {
           socketId: socket.id,
           name: user.name,
+          email: user.email,
           picture: user.picture,
-          uniqueName: user.uniqueName
+          uniqueName: user.uniqueName,
+          bio: user.bio,
       };
+
+      // Add/Update in all registered users list
+      if (!registeredUsers[user.email]) {
+        console.log(`New user registered: ${user.email}`);
+      }
+      registeredUsers[user.email] = { ...registeredUsers[user.email], ...users[user.email] };
+
       io.emit('online-users', Object.keys(users));
-      console.log(`User registered: ${user.email} as ${user.uniqueName}`);
+      io.emit('all-users-update', Object.values(registeredUsers));
+      console.log(`User online: ${user.email} as ${user.uniqueName}`);
+  });
+  
+  socket.on('get-all-users', () => {
+    socket.emit('all-users-update', Object.values(registeredUsers));
+  });
+
+  socket.on('update-profile', ({ email, uniqueName, bio }) => {
+    const existingUser = Object.values(registeredUsers).find(
+        u => u.uniqueName?.toLowerCase() === uniqueName?.toLowerCase() && u.email !== email
+    );
+
+    if (existingUser) {
+        return socket.emit('profile-update-error', 'This username is already taken.');
+    }
+
+    const updatedUser = { ...registeredUsers[email], uniqueName, bio };
+    registeredUsers[email] = updatedUser;
+
+    if (users[email]) {
+        users[email] = { ...users[email], uniqueName, bio };
+    }
+    
+    socket.emit('profile-update-success', updatedUser);
+    io.emit('all-users-update', Object.values(registeredUsers));
+    console.log(`Profile updated for ${email} to ${uniqueName}`);
   });
   
   // --- Private Messaging ---
@@ -228,7 +266,7 @@ console.log("Factorial of 5 is:", findFactorial(5));
     if (socket.email && users[socket.email]) {
         delete users[socket.email];
         io.emit('online-users', Object.keys(users));
-        console.log(`User unregistered: ${socket.email}`);
+        console.log(`User offline: ${socket.email}`);
     }
     cleanupRoomForSocket(socket);
   });

@@ -31,13 +31,14 @@ const App: React.FC = () => {
       try {
         const decoded: { name: string; email: string; picture: string; } = jwtDecode(credentialResponse.credential);
         const savedProfile = localStorage.getItem(`profile_${decoded.email}`);
-        const uniqueName = savedProfile ? JSON.parse(savedProfile).uniqueName : undefined;
+        const { uniqueName, bio } = savedProfile ? JSON.parse(savedProfile) : { uniqueName: undefined, bio: undefined };
         
         setUser({
           name: decoded.name,
           email: decoded.email,
           picture: decoded.picture,
           uniqueName: uniqueName,
+          bio: bio,
         });
         localStorage.setItem('loginTimestamp', Date.now().toString());
       } catch (error) {
@@ -51,8 +52,8 @@ const App: React.FC = () => {
   }, []);
 
   const handleProfileUpdate = (updatedUser: User) => {
-    setUser(updatedUser);
-    localStorage.setItem(`profile_${updatedUser.email}`, JSON.stringify({ uniqueName: updatedUser.uniqueName }));
+    setUser(prevUser => ({...prevUser, ...updatedUser}));
+    localStorage.setItem(`profile_${updatedUser.email}`, JSON.stringify({ uniqueName: updatedUser.uniqueName, bio: updatedUser.bio }));
   };
 
 

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { User, MockUser, ChatMessage } from '../types';
+import { User, ChatMessage } from '../types';
 
 interface ChatDrawerProps {
-  targetUser: MockUser | null;
+  targetUser: User | null;
   currentUser: User;
   socket: any;
   messages: ChatMessage[];
@@ -77,7 +77,7 @@ const ChatDrawer: React.FC<ChatDrawerProps> = ({ targetUser, currentUser, socket
                 className="w-full bg-transparent p-3 text-white focus:outline-none"
               />
               <button type="submit" className="text-blue-400 hover:text-blue-300 p-2 disabled:text-gray-600" disabled={!input.trim()}>
-                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" /></svg>
+                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="http://www.w3.org/2000/svg" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" /></svg>
               </button>
             </div>
           </form>

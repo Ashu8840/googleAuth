@@ -64,11 +64,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout, onProfile
   }, [user, callState.status]);
 
   const renderActivePage = () => {
-    if (user && !user.uniqueName) {
-      return <ProfilePage user={user} onProfileUpdate={onProfileUpdate} />;
-    }
-    
     const socket = socketRef.current;
+    
+    if (user && !user.uniqueName) {
+      return <ProfilePage user={user} onProfileUpdate={onProfileUpdate} socket={socket} />;
+    }
 
     switch (activePage) {
       case 'Core Subjects':
@@ -84,7 +84,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout, onProfile
       case 'Scheduler':
         return <SchedulerPage />;
       case 'Profile':
-        return <ProfilePage user={user} onProfileUpdate={onProfileUpdate} />;
+        return <ProfilePage user={user} onProfileUpdate={onProfileUpdate} socket={socket} />;
       default:
         return <CoreSubjectsPage />;
     }
